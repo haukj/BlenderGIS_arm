@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 from .utils import getBBOX
 
-from ..core.utils.gradient import Color, Stop, Gradient
+from ..core.utils.gradient import Color, Gradient
 
 from ..core.maths.interpo import scale
 from ..core.maths.kmeans1D import kmeans1d, getBreaks
