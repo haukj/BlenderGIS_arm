@@ -66,11 +66,12 @@ PARTTYPE_LOOKUP = {
 
 
 # Python 3 only handling
-
+# Python 2 compatibility helpers have been removed; use built-ins directly.
 # These compat aliases allow the original Python 2 code paths to be dropped
 # while still satisfying type checks from the older implementation.
 xrange = range
 izip = zip
+
 
 
 # Helpers
@@ -738,8 +739,8 @@ class Reader(object):
             record.partTypes = _Array('i', unpack("<%si" % nParts, f.read(nParts * 4)))
         # Read points - produces a list of [x,y] values
         if nPoints:
-            flat = unpack("<%sd" % (2 * nPoints), f.read(16*nPoints))
-            record.points = list(izip(*(iter(flat),) * 2))
+            flat = unpack("<%sd" % (2 * nPoints), f.read(16 * nPoints))
+            record.points = list(zip(*(iter(flat),) * 2))
         # Read z extremes and values
         if shapeType in (13,15,18,31):
             (zmin, zmax) = unpack("<2d", f.read(16))
@@ -947,7 +948,7 @@ class Reader(object):
                     else:
                         value = None # unknown value is set to missing
             else:
-                # anything else is forced to string/unicode
+                # anything else is forced to string
                 value = u(value, self.encoding, self.encodingErrors)
                 value = value.strip()
             record.append(value)
@@ -985,7 +986,7 @@ class Reader(object):
             self.__dbfHeader()
         f = self.__getFileObj(self.dbf)
         f.seek(self.__dbfHdrLength)
-        for i in xrange(self.numRecords):
+        for _ in range(self.numRecords):
             r = self.__record()
             if r:
                 yield r
@@ -1005,7 +1006,7 @@ class Reader(object):
     def iterShapeRecords(self):
         """Returns a generator of combination geometry/attribute records for
         all records in a shapefile."""
-        for shape, record in izip(self.iterShapes(), self.iterRecords()):
+        for shape, record in zip(self.iterShapes(), self.iterRecords()):
             yield ShapeRecord(shape=shape, record=record)
 
 
@@ -1555,8 +1556,8 @@ class Writer(object):
                 # anything else is forced to string, truncated to the length of the field
                 value = b(value, self.encoding, self.encodingErrors)[:size].ljust(size)
             if not isinstance(value, bytes):
-                # just in case some of the numeric format() and date strftime() results are still in unicode (Python 3 only)
-                value = b(value, 'ascii', self.encodingErrors) # should be default ascii encoding
+                # ensure numeric format() and date strftime() results are bytes
+                value = b(value, 'ascii', self.encodingErrors)  # default ascii encoding
             if len(value) != size:
                 raise ShapefileException(
                     "Shapefile Writer unable to pack incorrect sized value"
@@ -1822,20 +1823,8 @@ def test(**kwargs):
     if verbosity == 0:
         print('Running doctests...')
 
-    # ignore py2-3 unicode differences
-    import re
-    class Py23DocChecker(doctest.OutputChecker):
-        def check_output(self, want, got, optionflags):
-            if sys.version_info[0] == 2:
-                got = re.sub("u'(.*?)'", "'\\1'", got)
-                got = re.sub('u"(.*?)"', '"\\1"', got)
-            res = doctest.OutputChecker.check_output(self, want, got, optionflags)
-            return res
-        def summarize(self):
-            doctest.OutputChecker.summarize(True)
-
     # run tests
-    runner = doctest.DocTestRunner(checker=Py23DocChecker(), verbose=verbosity)
+    runner = doctest.DocTestRunner(verbose=verbosity)
     with open("README.md","rb") as fobj:
         test = doctest.DocTestParser().get_doctest(string=fobj.read().decode("utf8").replace('\r\n','\n'), globs={}, name="README", filename="README.md", lineno=0)
     failure_count, test_count = runner.run(test)

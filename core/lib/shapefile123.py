@@ -537,7 +537,7 @@ class Reader:
             self.__dbfHeader()
         f = self.__getFileObj(self.dbf)
         f.seek(self.__dbfHeaderLength())
-        for i in xrange(self.numRecords):
+        for _ in range(self.numRecords):
             r = self.__record()
             if r:
                 yield r
@@ -557,7 +557,7 @@ class Reader:
     def iterShapeRecords(self):
         """Returns a generator of combination geometry/attribute records for
         all records in a shapefile."""
-        for shape, record in izip(self.iterShapes(), self.iterRecords()):
+        for shape, record in zip(self.iterShapes(), self.iterRecords()):
             yield _ShapeRecord(shape=shape, record=record)
 
 
