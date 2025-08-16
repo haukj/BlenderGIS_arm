@@ -150,11 +150,11 @@ def replace_nans(array, max_iter, tolerance, kernel_size=1, method='localmean'):
 
 
 def sincinterp(image, x,  y, kernel_size=3 ):
-	"""
-	Re-sample an image at intermediate positions between pixels.
-	This function uses a cardinal interpolation formula which limits
-	the loss of information in the resampling process. It uses a limited
-	number of neighbouring pixels.
+	r"""
+        Re-sample an image at intermediate positions between pixels.
+        This function uses a cardinal interpolation formula which limits
+        the loss of information in the resampling process. It uses a limited
+        number of neighbouring pixels.
 
 	The new image :math:`im^+` at fractional locations :math:`x` and :math:`y` is computed as:
 	.. math::

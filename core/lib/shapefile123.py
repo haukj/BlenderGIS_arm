@@ -12,11 +12,9 @@ __version__ = "1.2.3"
 
 from struct import pack, unpack, calcsize, error
 import os
-import sys
 import time
 import array
 import tempfile
-import itertools
 
 #
 # Constants for shape types
@@ -35,58 +33,44 @@ POLYGONM = 25
 MULTIPOINTM = 28
 MULTIPATCH = 31
 
-PYTHON3 = sys.version_info[0] == 3
-
-if PYTHON3:
-    xrange = range
-    izip = zip
-else:
-    from itertools import izip
+## Python 3 only – legacy Python 2 branches removed
+xrange = range
+izip = zip
 
 def b(v):
-    if PYTHON3:
-        if isinstance(v, str):
-            # For python 3 encode str to bytes.
-            return v.encode('utf-8')
-        elif isinstance(v, bytes):
-            # Already bytes.
+    if isinstance(v, str):
+        # Encode str to bytes.
+        return v.encode('utf-8')
+    elif isinstance(v, bytes):
+        # Already bytes.
+        return v
+    else:
+        # Error.
+        raise Exception('Unknown input type')
+
+def u(v):
+    # try/catch added 2014/05/07
+    # returned error on dbf of shapefile
+    # from www.naturalearthdata.com named
+    # "ne_110m_admin_0_countries".
+    # Just returning v as is seemed to fix
+    # the problem.  This function could
+    # be condensed further.
+    try:
+        if isinstance(v, bytes):
+            # Decode bytes to str.
+            return v.decode('utf-8')
+        elif isinstance(v, str):
+            # Already str.
             return v
         else:
             # Error.
             raise Exception('Unknown input type')
-    else:
-        # For python 2 assume str passed in and return str.
-        return v
-
-def u(v):
-    if PYTHON3:
-        # try/catch added 2014/05/07
-        # returned error on dbf of shapefile
-        # from www.naturalearthdata.com named
-        # "ne_110m_admin_0_countries".
-        # Just returning v as is seemed to fix
-        # the problem.  This function could
-        # be condensed further.
-        try:
-          if isinstance(v, bytes):
-              # For python 3 decode bytes to str.
-              return v.decode('utf-8')
-          elif isinstance(v, str):
-              # Already str.
-              return v
-          else:
-              # Error.
-              raise Exception('Unknown input type')
-        except: return v
-    else:
-        # For python 2 assume str passed in and return str.
+    except:
         return v
 
 def is_string(v):
-    if PYTHON3:
-        return isinstance(v, str)
-    else:
-        return isinstance(v, basestring)
+    return isinstance(v, str)
 
 class _Array(array.array):
     """Converts python tuples to lits of the appropritate type.
@@ -567,9 +551,8 @@ class Reader:
     def shapeRecords(self):
         """Returns a list of combination geometry/attribute records for
         all records in a shapefile."""
-        shapeRecords = []
-        return [_ShapeRecord(shape=rec[0], record=rec[1]) \
-                                for rec in zip(self.shapes(), self.records())]
+        return [_ShapeRecord(shape=rec[0], record=rec[1])
+                for rec in zip(self.shapes(), self.records())]
 
     def iterShapeRecords(self):
         """Returns a generator of combination geometry/attribute records for
@@ -669,9 +652,6 @@ class Writer:
         x = []
         y = []
         for s in shapes:
-            shapeType = self.shapeType
-            if shapeTypes:
-                shapeType = shapeTypes[shapes.index(s)]
             px, py = list(zip(*s.points))[:2]
             x.extend(px)
             y.extend(py)

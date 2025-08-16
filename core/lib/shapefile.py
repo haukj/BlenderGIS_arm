@@ -13,8 +13,6 @@ import os
 import sys
 import time
 import array
-import tempfile
-import warnings
 import io
 from datetime import date
 
@@ -67,85 +65,51 @@ PARTTYPE_LOOKUP = {
     5: 'RING'}
 
 
-# Python 2-3 handling
+# Python 3 only handling
 
-PYTHON3 = sys.version_info[0] == 3
-
-if PYTHON3:
-    xrange = range
-    izip = zip
-else:
-    from itertools import izip
+# These compat aliases allow the original Python 2 code paths to be dropped
+# while still satisfying type checks from the older implementation.
+xrange = range
+izip = zip
 
 
 # Helpers
 
-MISSING = [None,'']
-NODATA = -10e38 # as per the ESRI shapefile spec, only used for m-values. 
+MISSING = [None, ""]
+NODATA = -10e38  # as per the ESRI shapefile spec, only used for m-values.
 
-if PYTHON3:
-    def b(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, str):
-            # For python 3 encode str to bytes.
-            return v.encode(encoding, encodingErrors)
-        elif isinstance(v, bytes):
-            # Already bytes.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return b""
-        else:
-            # Force string representation.
-            return str(v).encode(encoding, encodingErrors)
+def b(v, encoding="utf-8", encodingErrors="strict"):
+    if isinstance(v, str):
+        # Encode str to bytes.
+        return v.encode(encoding, encodingErrors)
+    elif isinstance(v, bytes):
+        # Already bytes.
+        return v
+    elif v is None:
+        # Since we're dealing with text, interpret None as ""
+        return b""
+    else:
+        # Force string representation.
+        return str(v).encode(encoding, encodingErrors)
 
-    def u(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, bytes):
-            # For python 3 decode bytes to str.
-            return v.decode(encoding, encodingErrors)
-        elif isinstance(v, str):
-            # Already str.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return ""
-        else:
-            # Force string representation.
-            return bytes(v).decode(encoding, encodingErrors)
 
-    def is_string(v):
-        return isinstance(v, str)
+def u(v, encoding="utf-8", encodingErrors="strict"):
+    if isinstance(v, bytes):
+        # Decode bytes to str.
+        return v.decode(encoding, encodingErrors)
+    elif isinstance(v, str):
+        # Already str.
+        return v
+    elif v is None:
+        # Since we're dealing with text, interpret None as ""
+        return ""
+    else:
+        # Force string representation.
+        return bytes(v).decode(encoding, encodingErrors)
 
-else:
-    def b(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, unicode):
-            # For python 2 encode unicode to bytes.
-            return v.encode(encoding, encodingErrors)
-        elif isinstance(v, bytes):
-            # Already bytes.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return ""
-        else:
-            # Force string representation.
-            return unicode(v).encode(encoding, encodingErrors)
 
-    def u(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, bytes):
-            # For python 2 decode bytes to unicode.
-            return v.decode(encoding, encodingErrors)
-        elif isinstance(v, unicode):
-            # Already unicode.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return u""
-        else:
-            # Force string representation.
-            return bytes(v).decode(encoding, encodingErrors)
-
-    def is_string(v):
-        return isinstance(v, basestring)
+def is_string(v):
+    return isinstance(v, str)
 
 
 # Begin
