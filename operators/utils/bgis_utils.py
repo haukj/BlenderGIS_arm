@@ -135,7 +135,7 @@ def addTexture(mat, img, uvLay, name='texture'):
 	textureNode = node_tree.nodes.new('ShaderNodeTexImage')
 	textureNode.image = img
 	textureNode.extension = 'CLIP'
-	textureNode.show_texture = True
+	textureNode.show_preview = True
 	textureNode.location = (-400, 200)
 	# Create BSDF diffuse node
 	diffuseNode = node_tree.nodes.new('ShaderNodeBsdfPrincipled')#ShaderNodeBsdfDiffuse
