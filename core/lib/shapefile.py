@@ -13,8 +13,6 @@ import os
 import sys
 import time
 import array
-import tempfile
-import warnings
 import io
 from datetime import date
 
@@ -67,85 +65,48 @@ PARTTYPE_LOOKUP = {
     5: 'RING'}
 
 
-# Python 2-3 handling
+# Python 3 only handling
 
-PYTHON3 = sys.version_info[0] == 3
-
-if PYTHON3:
-    xrange = range
-    izip = zip
-else:
-    from itertools import izip
+# Python 2 compatibility helpers have been removed; use built-ins directly.
 
 
 # Helpers
 
-MISSING = [None,'']
-NODATA = -10e38 # as per the ESRI shapefile spec, only used for m-values. 
+MISSING = [None, ""]
+NODATA = -10e38  # as per the ESRI shapefile spec, only used for m-values.
 
-if PYTHON3:
-    def b(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, str):
-            # For python 3 encode str to bytes.
-            return v.encode(encoding, encodingErrors)
-        elif isinstance(v, bytes):
-            # Already bytes.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return b""
-        else:
-            # Force string representation.
-            return str(v).encode(encoding, encodingErrors)
+def b(v, encoding="utf-8", encodingErrors="strict"):
+    if isinstance(v, str):
+        # Encode str to bytes.
+        return v.encode(encoding, encodingErrors)
+    elif isinstance(v, bytes):
+        # Already bytes.
+        return v
+    elif v is None:
+        # Since we're dealing with text, interpret None as ""
+        return b""
+    else:
+        # Force string representation.
+        return str(v).encode(encoding, encodingErrors)
 
-    def u(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, bytes):
-            # For python 3 decode bytes to str.
-            return v.decode(encoding, encodingErrors)
-        elif isinstance(v, str):
-            # Already str.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return ""
-        else:
-            # Force string representation.
-            return bytes(v).decode(encoding, encodingErrors)
 
-    def is_string(v):
-        return isinstance(v, str)
+def u(v, encoding="utf-8", encodingErrors="strict"):
+    if isinstance(v, bytes):
+        # Decode bytes to str.
+        return v.decode(encoding, encodingErrors)
+    elif isinstance(v, str):
+        # Already str.
+        return v
+    elif v is None:
+        # Since we're dealing with text, interpret None as ""
+        return ""
+    else:
+        # Force string representation.
+        return bytes(v).decode(encoding, encodingErrors)
 
-else:
-    def b(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, unicode):
-            # For python 2 encode unicode to bytes.
-            return v.encode(encoding, encodingErrors)
-        elif isinstance(v, bytes):
-            # Already bytes.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return ""
-        else:
-            # Force string representation.
-            return unicode(v).encode(encoding, encodingErrors)
 
-    def u(v, encoding='utf-8', encodingErrors='strict'):
-        if isinstance(v, bytes):
-            # For python 2 decode bytes to unicode.
-            return v.decode(encoding, encodingErrors)
-        elif isinstance(v, unicode):
-            # Already unicode.
-            return v
-        elif v is None:
-            # Since we're dealing with text, interpret None as ""
-            return u""
-        else:
-            # Force string representation.
-            return bytes(v).decode(encoding, encodingErrors)
-
-    def is_string(v):
-        return isinstance(v, basestring)
+def is_string(v):
+    return isinstance(v, str)
 
 
 # Begin
@@ -774,8 +735,8 @@ class Reader(object):
             record.partTypes = _Array('i', unpack("<%si" % nParts, f.read(nParts * 4)))
         # Read points - produces a list of [x,y] values
         if nPoints:
-            flat = unpack("<%sd" % (2 * nPoints), f.read(16*nPoints))
-            record.points = list(izip(*(iter(flat),) * 2))
+            flat = unpack("<%sd" % (2 * nPoints), f.read(16 * nPoints))
+            record.points = list(zip(*(iter(flat),) * 2))
         # Read z extremes and values
         if shapeType in (13,15,18,31):
             (zmin, zmax) = unpack("<2d", f.read(16))
@@ -983,7 +944,7 @@ class Reader(object):
                     else:
                         value = None # unknown value is set to missing
             else:
-                # anything else is forced to string/unicode
+                # anything else is forced to string
                 value = u(value, self.encoding, self.encodingErrors)
                 value = value.strip()
             record.append(value)
@@ -1021,7 +982,7 @@ class Reader(object):
             self.__dbfHeader()
         f = self.__getFileObj(self.dbf)
         f.seek(self.__dbfHdrLength)
-        for i in xrange(self.numRecords):
+        for _ in range(self.numRecords):
             r = self.__record()
             if r:
                 yield r
@@ -1041,7 +1002,7 @@ class Reader(object):
     def iterShapeRecords(self):
         """Returns a generator of combination geometry/attribute records for
         all records in a shapefile."""
-        for shape, record in izip(self.iterShapes(), self.iterRecords()):
+        for shape, record in zip(self.iterShapes(), self.iterRecords()):
             yield ShapeRecord(shape=shape, record=record)
 
 
@@ -1591,8 +1552,8 @@ class Writer(object):
                 # anything else is forced to string, truncated to the length of the field
                 value = b(value, self.encoding, self.encodingErrors)[:size].ljust(size)
             if not isinstance(value, bytes):
-                # just in case some of the numeric format() and date strftime() results are still in unicode (Python 3 only)
-                value = b(value, 'ascii', self.encodingErrors) # should be default ascii encoding
+                # ensure numeric format() and date strftime() results are bytes
+                value = b(value, 'ascii', self.encodingErrors)  # default ascii encoding
             if len(value) != size:
                 raise ShapefileException(
                     "Shapefile Writer unable to pack incorrect sized value"
@@ -1858,20 +1819,8 @@ def test(**kwargs):
     if verbosity == 0:
         print('Running doctests...')
 
-    # ignore py2-3 unicode differences
-    import re
-    class Py23DocChecker(doctest.OutputChecker):
-        def check_output(self, want, got, optionflags):
-            if sys.version_info[0] == 2:
-                got = re.sub("u'(.*?)'", "'\\1'", got)
-                got = re.sub('u"(.*?)"', '"\\1"', got)
-            res = doctest.OutputChecker.check_output(self, want, got, optionflags)
-            return res
-        def summarize(self):
-            doctest.OutputChecker.summarize(True)
-
     # run tests
-    runner = doctest.DocTestRunner(checker=Py23DocChecker(), verbose=verbosity)
+    runner = doctest.DocTestRunner(verbose=verbosity)
     with open("README.md","rb") as fobj:
         test = doctest.DocTestParser().get_doctest(string=fobj.read().decode("utf8").replace('\r\n','\n'), globs={}, name="README", filename="README.md", lineno=0)
     failure_count, test_count = runner.run(test)

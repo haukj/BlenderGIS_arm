@@ -139,7 +139,7 @@ class IMPORTGIS_OT_ascii_grid(Operator, ImportHelper):
                 return row  # eof without reaching ncols?
 
             # find each value separated by any whitespace char
-            for m in re.finditer('([^\s]+)', chunk):
+            for m in re.finditer(r'([^\s]+)', chunk):
                 row.append(m.group(0))
                 if len(row) == ncols:
                     # completed a row within this chunk, rewind the position to start at the beginning of the next row
@@ -186,7 +186,7 @@ class IMPORTGIS_OT_ascii_grid(Operator, ImportHelper):
         log.info('Importing {}...'.format(filename))
 
         f = open(filename, 'r')
-        meta_re = re.compile('^([^\s]+)\s+([^\s]+)$')  # 'abc  123'
+        meta_re = re.compile(r'^([^\s]+)\s+([^\s]+)$')  # 'abc  123'
         meta = {}
         for i in range(6):
             line = f.readline()

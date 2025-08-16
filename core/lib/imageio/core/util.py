@@ -21,16 +21,10 @@ import numpy as np
 IS_PYPY = '__pypy__' in sys.builtin_module_names
 THIS_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# Taken from six.py
-PY3 = sys.version_info[0] == 3
-if PY3:
-    string_types = str,
-    text_type = str
-    binary_type = bytes
-else:  # pragma: no cover
-    string_types = basestring,  # noqa
-    text_type = unicode  # noqa
-    binary_type = str
+# Basic Python 3 type aliases (legacy Python 2 branches removed)
+string_types = (str,)
+text_type = str
+binary_type = bytes
 
 
 def urlopen(*args, **kwargs):

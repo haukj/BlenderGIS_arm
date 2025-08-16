@@ -1,29 +1,19 @@
 from collections import OrderedDict
 from decimal import Decimal
 import re
-import sys
 import os
 
 from . import exception
-from .__about__ import (
-    __author__, __copyright__, __email__, __license__, __summary__, __title__,
-    __uri__, __version__
-)
+from .__about__ import __version__
+
+__all__ = ['__version__']
 
 import xml.etree.ElementTree as ET
 import json
 
-PY2 = sys.version_info[0] == 2
-PY3 = sys.version_info[0] == 3
-
-if PY2:
-    from StringIO import StringIO
-    from urllib2 import urlopen
-    from urllib2 import HTTPError
-elif PY3:
-    from io import StringIO
-    from urllib.request import urlopen, Request
-    from urllib.error import HTTPError
+from io import StringIO
+from urllib.request import urlopen, Request
+from urllib.error import HTTPError
 
 TIMEOUT = 120
 
@@ -54,7 +44,7 @@ class Overpass(object):
         self.referer = referer
         self.user_agent = user_agent
         self.url = overpass_server
-        self._regex_extract_error_msg = re.compile(b"\<p\>(?P<msg>\<strong\s.*?)\</p\>")
+        self._regex_extract_error_msg = re.compile(rb"<p>(?P<msg><strong\s.*?)</p>")
         self._regex_remove_tag = re.compile(b"<[^>]*?>")
         if read_chunk_size is None:
             read_chunk_size = self.default_read_chunk_size
@@ -91,11 +81,7 @@ class Overpass(object):
         f.close()
 
         if f.code == 200:
-            if PY2:
-                http_info = f.info()
-                content_type = http_info.getheader("content-type")
-            else:
-                content_type = f.getheader("Content-Type")
+            content_type = f.getheader("Content-Type")
 
             if content_type == "application/json":
                 return self.parse_json(response)
@@ -163,9 +149,6 @@ class Overpass(object):
 
             if isinstance(data, bytes):
                 data = data.decode(encoding)
-            if PY2 and not isinstance(data, str):
-                # Python 2.x: Convert unicode strings
-                data = data.encode(encoding)
 
         return Result.from_xml(data, api=self)
 
