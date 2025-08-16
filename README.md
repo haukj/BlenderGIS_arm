@@ -1,6 +1,6 @@
 Blender GIS
 ==========
-Blender minimum version required : v2.83
+Blender minimum version required : v4.5
 
 Note : Since 2022, the OpenTopography web service requires an API key. Please register to opentopography.org and request a key. This service is still free.
 
