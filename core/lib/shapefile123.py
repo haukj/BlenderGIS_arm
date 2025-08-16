@@ -34,6 +34,8 @@ MULTIPOINTM = 28
 MULTIPATCH = 31
 
 ## Python 3 only – legacy Python 2 branches removed
+xrange = range
+izip = zip
 
 def b(v):
     if isinstance(v, str):

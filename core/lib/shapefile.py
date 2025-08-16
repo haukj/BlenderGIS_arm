@@ -66,8 +66,12 @@ PARTTYPE_LOOKUP = {
 
 
 # Python 3 only handling
-
 # Python 2 compatibility helpers have been removed; use built-ins directly.
+# These compat aliases allow the original Python 2 code paths to be dropped
+# while still satisfying type checks from the older implementation.
+xrange = range
+izip = zip
+
 
 
 # Helpers
