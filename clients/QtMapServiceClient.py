@@ -1,6 +1,5 @@
 # -*- coding:utf-8 -*-
 import sys, os, time
-import sys, os
 sys.path.append(os.path.abspath('..'))
 
 from PyQt4 import QtGui, QtCore, uic
