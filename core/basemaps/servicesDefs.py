@@ -98,7 +98,6 @@ GRIDS = {
 		"resolutions" : [4000, 2000, 1000, 500, 250, 100, 50, 25, 10, 5, 2, 1, 0.5, 0.25, 0.1] #15 levels
 	},
 
-
 	# >> France Lambert 93 used by CRAIG WMTS
 	# WMTS resolution = ScaleDenominator * 0.00028
 	# (0.28 mm = physical distance of a pixel (WMTS assumes a DPI 90.7)
@@ -113,6 +112,23 @@ GRIDS = {
 		"initRes": 1354.666,
 		"resFactor" : 2
 	},
+
+    "UTM32_25832" : {
+        "name" : 'UTM32 EUREF89 (EPSG:25832)',
+        "description" : 'Nibcache_UTM32_EUREF89_v2 – Norge i UTM32',
+        "CRS": 'EPSG:25832',
+        # Fra <ows:BoundingBox> i WMTS-capabilities
+        # LowerCorner>-2000000.0 3500000.0</LowerCorner>
+        # UpperCorner>3545984.0 9045984.0</UpperCorner>
+        "bbox": [-2000000.0, 3500000.0, 3545984.0, 9045984.0],  # w, s, e, n
+        "bboxCRS": 'EPSG:25832',
+        "tileSize": 256,
+        "originLoc": "NW",  # samme som andre globale grids
+        # initRes = ScaleDenominator(level 0) * 0.00028
+        # 7.737142857141884E7 * 0.00028 ≈ 21664
+        "initRes": 21664.0,
+        "resFactor" : 2,
+    },
 
 }
 
@@ -205,6 +221,77 @@ SOURCES = {
 		"urlTemplate": "https://server.arcgisonline.com/ArcGIS/rest/services/{LAY}/MapServer/tile/{Z}/{Y}/{X}",
 		"referer": "https://server.arcgisonline.com/arcgis/rest/services"
 	},
+
+    "GEONORGE_NIB" : {
+        "name" : 'Geonorge ortofoto',
+        "description" : 'Kartverket ortofoto (wms.nib)',
+        "service": 'WMS',
+        # Vi bruker Web Mercator-gridet som allerede finnes (EPSG:3857)
+        "grid": 'WM',
+        "layers" : {
+            "ORTHO" : {
+                "urlKey" : 'ortofoto',   # <Name> i WMS_Capabilities
+                "name" : 'Ortofoto Norge',
+                "description" : '',
+                "format" : 'jpeg',       # eller 'png' hvis du vil ha PNG
+                "style" : 'default',     # <Style><Name>default</Name>
+                "zmin" : 0,
+                "zmax" : 20
+            }
+        },
+        "urlTemplate": {
+            "BASE_URL" : 'https://wms.geonorge.no/skwms1/wms.nib?',
+            "SERVICE"  : 'WMS',
+            "VERSION"  : '1.1.1',      # Holder oss til 1.1.1 som OSM_WMS
+            "REQUEST"  : 'GetMap',
+            "SRS"      : '{CRS}',      # BlenderGIS fyller inn EPSG:3857 fra gridet
+            "LAYERS"   : '{LAY}',
+            "FORMAT"   : 'image/{FORMAT}',
+            "STYLES"   : '{STYLE}',
+            "BBOX"     : '{BBOX}',     # xmin,ymin,xmax,ymax i SRS-koordinater
+            "WIDTH"    : '{WIDTH}',
+            "HEIGHT"   : '{HEIGHT}',
+            "TRANSPARENT" : "False"
+        },
+        "referer": "https://www.geonorge.no/"
+    },
+
+    "GEONORGE_NIB_WMTS" : {
+        "name" : 'GeoNorge NIB Ortofoto (UTM32)',
+        "description" : 'Nibcache_UTM32_EUREF89_v2 – ortofoto Norge, EPSG:25832',
+        "service": 'WMTS',
+        "grid": 'UTM32_25832',
+        "matrix" : 'default028mm',
+        "layers" : {
+            "NIB" : {
+                "urlKey" : 'Nibcache_UTM32_EUREF89_v2',
+                "name" : 'Ortofoto NIB UTM32',
+                "description" : '',
+                # WMTS-format i capabilities: image/jpgpng
+                # BlenderGIS bygger "image/{FORMAT}", så vi bruker "jpgpng" her
+                "format" : 'jpgpng',
+                "style"  : 'default',
+                "zmin"   : 0,
+                "zmax"   : 17,  # TileMatrix 0–17 i capabilities
+            }
+        },
+        "urlTemplate": {
+            # KVP-binding fra WMTS-capabilities:
+            # http://opencache.statkart.no/gatekeeper/gk/gk.open_nib_utm32_wmts_v2?
+            "BASE_URL"     : 'https://opencache.statkart.no/gatekeeper/gk/gk.open_nib_utm32_wmts_v2?',
+            "SERVICE"      : 'WMTS',
+            "VERSION"      : '1.0.0',
+            "REQUEST"      : 'GetTile',
+            "LAYER"        : '{LAY}',
+            "STYLE"        : '{STYLE}',
+            "FORMAT"       : 'image/{FORMAT}',
+            "TILEMATRIXSET": '{MATRIX}',
+            "TILEMATRIX"   : '{Z}',
+            "TILEROW"      : '{Y}',
+            "TILECOL"      : '{X}',
+        },
+        "referer": "https://www.geonorge.no/",
+    },
 
 
 	###############
