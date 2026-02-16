@@ -49,6 +49,7 @@ EXPORT_SHP = True
 GET_DEM = True
 IMPORT_GEORASTER = True
 IMPORT_OSM = True
+IMPORT_NVDB = True
 IMPORT_SHP = True
 IMPORT_ASC = True
 DELAUNAY = True
@@ -105,22 +106,45 @@ https://stackoverflow.com/questions/1643327/sys-excepthook-and-threading
 '''
 import threading
 
-init_original = threading.Thread.__init__
+def _install_thread_exception_forwarding():
+	'''
+	Forward uncaught exceptions from worker threads to sys.excepthook.
+	Prefer native threading.excepthook when available (Py>=3.8) and keep
+	a guarded fallback monkeypatch for older runtimes.
+	'''
+	if getattr(threading, '_bgis_thread_excepthook_installed', False):
+		return
 
-def init(self, *args, **kwargs):
+	if hasattr(threading, 'excepthook'):
+		original = threading.excepthook
 
-	init_original(self, *args, **kwargs)
-	run_original = self.run
+		def _threading_excepthook(args):
+			try:
+				sys.excepthook(args.exc_type, args.exc_value, args.exc_traceback)
+			except Exception:
+				original(args)
 
-	def run_with_except_hook(*args2, **kwargs2):
-		try:
-			run_original(*args2, **kwargs2)
-		except Exception:
-			sys.excepthook(*sys.exc_info())
+		threading.excepthook = _threading_excepthook
+	else:
+		init_original = threading.Thread.__init__
 
-	self.run = run_with_except_hook
+		def init(self, *args, **kwargs):
+			init_original(self, *args, **kwargs)
+			run_original = self.run
 
-threading.Thread.__init__ = init
+			def run_with_except_hook(*args2, **kwargs2):
+				try:
+					run_original(*args2, **kwargs2)
+				except Exception:
+					sys.excepthook(*sys.exc_info())
+
+			self.run = run_with_except_hook
+
+		threading.Thread.__init__ = init
+
+	threading._bgis_thread_excepthook_installed = True
+
+_install_thread_exception_forwarding()
 
 ####
 
@@ -149,6 +173,8 @@ if IMPORT_GEORASTER:
 	from .operators import io_import_georaster
 if IMPORT_OSM:
 	from .operators import io_import_osm
+if IMPORT_NVDB:
+	from .operators import io_import_nvdb
 if IMPORT_SHP:
 	from .operators import io_import_shp
 if IMPORT_ASC:
@@ -214,6 +240,8 @@ class VIEW3D_MT_menu_gis_webgeodata(bpy.types.Menu):
 			self.layout.operator("view3d.map_start", icon_value=icons_dict["layers"].icon_id)
 		if IMPORT_OSM:
 			self.layout.operator("importgis.osm_query", icon_value=icons_dict["osm"].icon_id)
+		if IMPORT_NVDB:
+			self.layout.operator("importgis.nvdb_query")
 		if GET_DEM:
 			self.layout.operator("importgis.dem_query", icon_value=icons_dict["raster"].icon_id)
 
@@ -316,6 +344,8 @@ def register():
 		io_export_shp.register()
 	if IMPORT_OSM:
 		io_import_osm.register()
+	if IMPORT_NVDB:
+		io_import_nvdb.register()
 	if IMPORT_ASC:
 		io_import_asc.register()
 	if DELAUNAY:
@@ -388,6 +418,8 @@ def unregister():
 		io_export_shp.unregister()
 	if IMPORT_OSM:
 		io_import_osm.unregister()
+	if IMPORT_NVDB:
+		io_import_nvdb.unregister()
 	if IMPORT_ASC:
 		io_import_asc.unregister()
 	if DELAUNAY:
