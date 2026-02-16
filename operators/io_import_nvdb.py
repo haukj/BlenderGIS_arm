@@ -8,12 +8,12 @@ from urllib.error import HTTPError, URLError
 
 import bpy
 import bmesh
-from bpy.types import Operator
 from bpy.props import BoolProperty, EnumProperty, IntProperty
+from bpy.types import Operator
 
 from .. import settings
-from ..geoscene import GeoScene
 from ..core.proj import reprojBbox, reprojPts
+from ..geoscene import GeoScene
 from .utils import adjust3Dview, getBBOX, isTopView
 
 log = logging.getLogger(__name__)
@@ -23,96 +23,121 @@ NVDB_API_ENDPOINTS = [
 	('https://nvdbapiles-v3.test.atlas.vegvesen.no', 'NVDB API LES v3 (test)', 'Statens vegvesen NVDB test-API'),
 ]
 
+NVDB_SEGMENT_PATH = '/vegnett/veglenkesekvenser/segmentert'
+NVDB_ITEM_KEYS = ('segmenter', 'vegnett', 'objekter')
 
-def _extract_linestrings(payload):
-	'''
-	Extract line coordinates from common NVDB response formats.
-	Returns list[list[(lon, lat)]].
-	'''
-	lines = []
 
-	def parse_wkt_linestring(wkt):
-		wkt = (wkt or '').strip()
-		if not wkt:
-			return None
-		upper = wkt.upper()
-		if not upper.startswith('LINESTRING'):
-			return None
-		try:
-			coords_text = wkt[wkt.index('(') + 1:wkt.rindex(')')]
-		except ValueError:
-			return None
-		pts = []
-		for pair in coords_text.split(','):
-			parts = [p for p in pair.strip().split(' ') if p]
-			if len(parts) < 2:
-				continue
-			try:
-				x = float(parts[0])
-				y = float(parts[1])
-			except ValueError:
-				continue
-			pts.append((x, y))
-		return pts if len(pts) >= 2 else None
-
-	def parse_geojson_geom(geom):
-		if not isinstance(geom, dict):
-			return None
-		gtype = (geom.get('type') or '').upper()
-		coords = geom.get('coordinates')
-		if gtype == 'LINESTRING' and isinstance(coords, list):
-			pts = []
-			for c in coords:
-				if isinstance(c, (list, tuple)) and len(c) >= 2:
-					pts.append((float(c[0]), float(c[1])))
-			return pts if len(pts) >= 2 else None
-		if gtype == 'MULTILINESTRING' and isinstance(coords, list):
-			parsed = []
-			for line in coords:
-				if not isinstance(line, list):
-					continue
-				pts = []
-				for c in line:
-					if isinstance(c, (list, tuple)) and len(c) >= 2:
-						pts.append((float(c[0]), float(c[1])))
-				if len(pts) >= 2:
-					parsed.append(pts)
-			return parsed if parsed else None
+def _parse_wkt_linestring(wkt):
+	"""Parse WKT LINESTRING into [(x, y), ...]."""
+	if not isinstance(wkt, str):
 		return None
 
-	if isinstance(payload, dict) and payload.get('type') == 'FeatureCollection':
-		features = payload.get('features') or []
-		for feat in features:
-			geom = (feat or {}).get('geometry')
-			parsed = parse_geojson_geom(geom)
-			if isinstance(parsed, list) and parsed and isinstance(parsed[0], tuple):
-				lines.append(parsed)
-			elif isinstance(parsed, list):
-				lines.extend(parsed)
+	value = wkt.strip()
+	if not value.upper().startswith('LINESTRING'):
+		return None
+
+	try:
+		coords_text = value[value.index('(') + 1:value.rindex(')')]
+	except ValueError:
+		return None
+
+	points = []
+	for pair in coords_text.split(','):
+		parts = pair.strip().split()
+		if len(parts) < 2:
+			continue
+		try:
+			x = float(parts[0])
+			y = float(parts[1])
+		except ValueError:
+			continue
+		points.append((x, y))
+
+	return points if len(points) >= 2 else None
+
+
+def _parse_geojson_lines(geometry):
+	"""Parse GeoJSON LineString/MultiLineString into list of lines."""
+	if not isinstance(geometry, dict):
+		return []
+
+	gtype = str(geometry.get('type', '')).upper()
+	coords = geometry.get('coordinates')
+	if not isinstance(coords, list):
+		return []
+
+	def build_line(raw_line):
+		line = []
+		for coord in raw_line:
+			if not isinstance(coord, (list, tuple)) or len(coord) < 2:
+				continue
+			try:
+				line.append((float(coord[0]), float(coord[1])))
+			except (TypeError, ValueError):
+				continue
+		return line if len(line) >= 2 else None
+
+	if gtype == 'LINESTRING':
+		line = build_line(coords)
+		return [line] if line else []
+
+	if gtype == 'MULTILINESTRING':
+		lines = []
+		for raw_line in coords:
+			if not isinstance(raw_line, list):
+				continue
+			line = build_line(raw_line)
+			if line:
+				lines.append(line)
 		return lines
 
-	candidates = []
-	if isinstance(payload, dict):
-		for k in ('objekter', 'vegnett', 'segmenter'):
-			v = payload.get(k)
-			if isinstance(v, list):
-				candidates.extend(v)
+	return []
 
-	for item in candidates:
-		if not isinstance(item, dict):
+
+def _extract_linestrings(payload):
+	"""Extract road centerlines from NVDB/GeoJSON payloads.
+
+	Returns list[list[(lon, lat)]].
+	"""
+	if not isinstance(payload, dict):
+		return []
+
+	if payload.get('type') == 'FeatureCollection':
+		features = payload.get('features')
+		if not isinstance(features, list):
+			return []
+		lines = []
+		for feature in features:
+			if not isinstance(feature, dict):
+				continue
+			lines.extend(_parse_geojson_lines(feature.get('geometry')))
+		return lines
+
+	segments = []
+	for key in NVDB_ITEM_KEYS:
+		items = payload.get(key)
+		if isinstance(items, list):
+			segments.extend(items)
+
+	lines = []
+	for segment in segments:
+		if not isinstance(segment, dict):
 			continue
-		geo = item.get('geometri') or {}
-		parsed = parse_geojson_geom(geo)
-		if parsed is None:
-			parsed = parse_geojson_geom(item.get('geometry') or {})
-		if parsed is None:
-			parsed = parse_wkt_linestring(geo.get('wkt') if isinstance(geo, dict) else None)
-		if parsed is None:
-			continue
-		if isinstance(parsed, list) and parsed and isinstance(parsed[0], tuple):
-			lines.append(parsed)
-		elif isinstance(parsed, list):
-			lines.extend(parsed)
+
+		geo = segment.get('geometri')
+		geometry = segment.get('geometry')
+
+		if isinstance(geo, dict):
+			lines.extend(_parse_geojson_lines(geo))
+			wkt_line = _parse_wkt_linestring(geo.get('wkt'))
+			if wkt_line:
+				lines.append(wkt_line)
+		elif isinstance(geo, str):
+			wkt_line = _parse_wkt_linestring(geo)
+			if wkt_line:
+				lines.append(wkt_line)
+
+		lines.extend(_parse_geojson_lines(geometry))
 
 	return lines
 
@@ -199,9 +224,9 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 
 	def _get_query_bbox_lonlat(self, context, geoscn):
 		objs = context.selected_objects
-		aObj = context.active_object
-		if len(objs) == 1 and aObj and aObj.type == 'MESH':
-			bbox = getBBOX.fromObj(aObj).toGeo(geoscn)
+		a_obj = context.active_object
+		if len(objs) == 1 and a_obj and a_obj.type == 'MESH':
+			bbox = getBBOX.fromObj(a_obj).toGeo(geoscn)
 		elif isTopView(context):
 			bbox = getBBOX.fromTopView(context).toGeo(geoscn)
 		else:
@@ -316,6 +341,10 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 		if obj_count == 0:
 			self.report({'WARNING'}, 'NVDB response parsed, but no valid geometry could be built')
 			return {'CANCELLED'}
+
+		if reproj_fail_count:
+			log.warning('Failed to reproject %s NVDB segment(s)', reproj_fail_count)
+			self.report({'WARNING'}, f'{reproj_fail_count} segment(s) could not be reprojected and were skipped')
 
 		bbox_all = getBBOX.fromScn(scn)
 		adjust3Dview(context, bbox_all, zoomToSelect=False)
