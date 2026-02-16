@@ -226,10 +226,10 @@ class VIEW3D_MT_menu_gis_webgeodata(bpy.types.Menu):
 	def draw(self, context):
 		if BASEMAPS:
 			self.layout.operator("view3d.map_start", icon_value=icons_dict["layers"].icon_id)
-		if IMPORT_OSM:
-			self.layout.operator("importgis.osm_query", icon_value=icons_dict["osm"].icon_id)
 		if IMPORT_NVDB:
-			self.layout.operator("importgis.nvdb_query")
+			self.layout.operator("importgis.nvdb_query", text="NVDB vegnett (Statens vegvesen)")
+		if IMPORT_OSM:
+			self.layout.operator("importgis.osm_query", icon_value=icons_dict["osm"].icon_id, text="OpenStreetMap (uoffisiell)")
 		if GET_DEM:
 			self.layout.operator("importgis.dem_query", icon_value=icons_dict["raster"].icon_id)
 

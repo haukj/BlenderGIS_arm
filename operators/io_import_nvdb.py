@@ -4,11 +4,12 @@ import json
 import logging
 import urllib.parse
 import urllib.request
+from urllib.error import HTTPError, URLError
 
 import bpy
 import bmesh
 from bpy.types import Operator
-from bpy.props import BoolProperty, EnumProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty
 
 from .. import settings
 from ..geoscene import GeoScene
@@ -116,6 +117,47 @@ def _extract_linestrings(payload):
 	return lines
 
 
+def _collect_items(payload):
+	"""Return item list from common NVDB payload formats."""
+	if not isinstance(payload, dict):
+		return []
+	for key in ('objekter', 'vegnett', 'segmenter'):
+		items = payload.get(key)
+		if isinstance(items, list):
+			return items
+	return []
+
+
+def _fetch_all_pages(base_url, params, headers, timeout=45, max_pages=20):
+	"""Fetch paginated NVDB responses.
+
+	NVDB LES v3 often returns paging info in metadata.neste.href.
+	"""
+	all_items = []
+	next_url = base_url.rstrip('/') + '/vegnett/veglenkesekvenser/segmentert?' + urllib.parse.urlencode(params)
+	pages = 0
+
+	while next_url and pages < max_pages:
+		pages += 1
+		log.info('Requesting NVDB page %s: %s', pages, next_url)
+		request = urllib.request.Request(url=next_url, headers=headers)
+		with urllib.request.urlopen(request, timeout=timeout) as resp:
+			payload = json.loads(resp.read().decode('utf-8'))
+
+		page_items = _collect_items(payload)
+		if page_items:
+			all_items.extend(page_items)
+
+		metadata = payload.get('metadata') if isinstance(payload, dict) else None
+		next_url = None
+		if isinstance(metadata, dict):
+			neste = metadata.get('neste')
+			if isinstance(neste, dict):
+				next_url = neste.get('href')
+
+	return all_items, pages
+
+
 class IMPORTGIS_OT_nvdb_query(Operator):
 	"""Import road centerlines from Statens vegvesen NVDB API"""
 
@@ -134,6 +176,20 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 	only_drivable: BoolProperty(
 		name='Kun kjørende veger',
 		description='Filtrer på trafikantgruppe K (kjørende)',
+		default=True,
+	)
+
+	max_segments: IntProperty(
+		name='Maks segmenter',
+		description='Øvre grense for hvor mange vegsegmenter som bygges i Blender (0 = ingen grense)',
+		min=0,
+		soft_max=20000,
+		default=5000,
+	)
+
+	merge_segments: BoolProperty(
+		name='Slå sammen til ett objekt',
+		description='Bygg alle NVDB-segmenter som ett mesh-objekt for bedre ytelse i store uttrekk',
 		default=True,
 	)
 
@@ -176,53 +232,86 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 		if self.only_drivable:
 			params['trafikantgruppe'] = 'K'
 
-		url = self.endpoint.rstrip('/') + '/vegnett/veglenkesekvenser/segmentert?' + urllib.parse.urlencode(params)
 		headers = {
 			'Accept': 'application/json',
 			'User-Agent': settings.user_agent,
 			'Referer': 'https://www.vegvesen.no/',
+			'X-Client': 'BlenderGIS-NVDB-Importer',
 		}
 
-		log.info('Requesting NVDB: %s', url)
-		request = urllib.request.Request(url=url, headers=headers)
 		try:
-			with urllib.request.urlopen(request, timeout=45) as resp:
-				payload = json.loads(resp.read().decode('utf-8'))
+			items, page_count = _fetch_all_pages(self.endpoint, params, headers=headers, timeout=45)
+		except HTTPError as e:
+			log.error('NVDB query failed with HTTP error %s', e.code, exc_info=True)
+			self.report({'ERROR'}, f'NVDB query failed (HTTP {e.code}). Check endpoint/parameters.')
+			return {'CANCELLED'}
+		except URLError as e:
+			log.error('NVDB query failed due to network issue', exc_info=True)
+			self.report({'ERROR'}, f'NVDB query failed due to network error: {e.reason}')
+			return {'CANCELLED'}
 		except Exception:
 			log.error('NVDB query failed', exc_info=True)
-			self.report({'ERROR'}, 'NVDB query failed. Check network and logs for details.')
+			self.report({'ERROR'}, 'NVDB query failed. Check logs for details.')
 			return {'CANCELLED'}
 
-		lines_lonlat = _extract_linestrings(payload)
+		lines_lonlat = _extract_linestrings({'segmenter': items})
 		if not lines_lonlat:
 			self.report({'WARNING'}, 'No NVDB road segments found in requested area')
 			return {'CANCELLED'}
 
+		if self.max_segments > 0 and len(lines_lonlat) > self.max_segments:
+			lines_lonlat = lines_lonlat[:self.max_segments]
+			self.report({'WARNING'}, f'NVDB returned many results; limited to {self.max_segments} segments')
+
 		dx, dy = geoscn.getOriginPrj()
 		obj_count = 0
-		for i, line in enumerate(lines_lonlat, 1):
-			try:
-				pts = reprojPts(4326, geoscn.crs, line)
-			except Exception:
-				continue
-			if len(pts) < 2:
-				continue
 
+		if self.merge_segments:
 			bm = bmesh.new()
-			verts = [bm.verts.new((x - dx, y - dy, 0.0)) for x, y in pts]
-			bm.verts.ensure_lookup_table()
-			for vi in range(len(verts) - 1):
+			for line in lines_lonlat:
 				try:
-					bm.edges.new((verts[vi], verts[vi + 1]))
-				except ValueError:
-					pass
+					pts = reprojPts(4326, geoscn.crs, line)
+				except Exception:
+					continue
+				if len(pts) < 2:
+					continue
+				verts = [bm.verts.new((x - dx, y - dy, 0.0)) for x, y in pts]
+				for vi in range(len(verts) - 1):
+					try:
+						bm.edges.new((verts[vi], verts[vi + 1]))
+					except ValueError:
+						pass
 
-			me = bpy.data.meshes.new(f'NVDB_road_{i:04d}')
-			bm.to_mesh(me)
+			if len(bm.verts) > 0:
+				me = bpy.data.meshes.new('NVDB_road_network')
+				bm.to_mesh(me)
+				obj = bpy.data.objects.new(me.name, me)
+				scn.collection.objects.link(obj)
+				obj_count = 1
 			bm.free()
-			obj = bpy.data.objects.new(me.name, me)
-			scn.collection.objects.link(obj)
-			obj_count += 1
+		else:
+			for i, line in enumerate(lines_lonlat, 1):
+				try:
+					pts = reprojPts(4326, geoscn.crs, line)
+				except Exception:
+					continue
+				if len(pts) < 2:
+					continue
+
+				bm = bmesh.new()
+				verts = [bm.verts.new((x - dx, y - dy, 0.0)) for x, y in pts]
+				for vi in range(len(verts) - 1):
+					try:
+						bm.edges.new((verts[vi], verts[vi + 1]))
+					except ValueError:
+						pass
+
+				me = bpy.data.meshes.new(f'NVDB_road_{i:04d}')
+				bm.to_mesh(me)
+				bm.free()
+				obj = bpy.data.objects.new(me.name, me)
+				scn.collection.objects.link(obj)
+				obj_count += 1
 
 		if obj_count == 0:
 			self.report({'WARNING'}, 'NVDB response parsed, but no valid geometry could be built')
@@ -230,7 +319,7 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 
 		bbox_all = getBBOX.fromScn(scn)
 		adjust3Dview(context, bbox_all, zoomToSelect=False)
-		self.report({'INFO'}, f'Imported {obj_count} NVDB road segment objects')
+		self.report({'INFO'}, f'Imported {len(lines_lonlat)} NVDB segments from {page_count} page(s) as {obj_count} object(s)')
 		return {'FINISHED'}
 
 
