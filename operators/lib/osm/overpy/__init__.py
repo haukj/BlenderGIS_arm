@@ -1,21 +1,41 @@
 from collections import OrderedDict
 from decimal import Decimal
 import re
+import sys
 import os
+import time
+import gzip
+import io
 
 from . import exception
-from .__about__ import __version__
-
-__all__ = ['__version__']
+from .__about__ import (
+    __author__, __copyright__, __email__, __license__, __summary__, __title__,
+    __uri__, __version__
+)
 
 import xml.etree.ElementTree as ET
 import json
 
-from io import StringIO
-from urllib.request import urlopen, Request
-from urllib.error import HTTPError
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
+
+if PY2:
+    from StringIO import StringIO
+    from urllib2 import urlopen
+    from urllib2 import HTTPError, URLError
+elif PY3:
+    from io import StringIO
+    from urllib.request import urlopen, Request
+    from urllib.error import HTTPError, URLError
 
 TIMEOUT = 120
+
+DEFAULT_OVERPASS_SERVERS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+    "https://overpass.nchc.org.tw/api/interpreter",
+)
 
 def is_valid_type(element, cls):
     """
@@ -28,130 +48,197 @@ def is_valid_type(element, cls):
     """
     return isinstance(element, cls) and element.id is not None
 
-
 class Overpass(object):
 
-    """
-    Class to access the Overpass API
-    """
     default_read_chunk_size = 4096
 
-    def __init__(self, overpass_server="http://overpass-api.de/api/interpreter", read_chunk_size=None, referer=None, user_agent=None):
-        """
-        :param read_chunk_size: Max size of each chunk read from the server response
-        :type read_chunk_size: Integer
-        """
+    def __init__(
+        self,
+        overpass_server="http://overpass-api.de/api/interpreter",
+        read_chunk_size=None,
+        referer=None,
+        user_agent=None,
+        fallback_servers=None,
+        max_tries=3,
+        timeout=TIMEOUT,
+    ):
         self.referer = referer
+
+        if not user_agent:
+            try:
+                user_agent = "{} / {} ({})".format(__title__, __version__, __uri__)
+            except Exception:
+                user_agent = "BlenderGIS Overpass Client"
         self.user_agent = user_agent
-        self.url = overpass_server
-        self._regex_extract_error_msg = re.compile(rb"<p>(?P<msg><strong\s.*?)</p>")
+
+        self.timeout = timeout
+        self.max_tries = max(1, int(max_tries))
+
+        def _norm(u):
+            u = (u or "").strip()
+            if u.startswith("http://overpass-api.de/"):
+                u = "https://" + u[len("http://"):]
+            return u
+
+        base = _norm(overpass_server)
+        if not base:
+            base = DEFAULT_OVERPASS_SERVERS[0]
+
+        servers = [base]
+        if fallback_servers:
+            servers.extend([_norm(u) for u in fallback_servers if _norm(u)])
+        else:
+            servers.extend(list(DEFAULT_OVERPASS_SERVERS))
+
+        dedup = []
+        seen = set()
+        for u in servers:
+            if u and u not in seen:
+                seen.add(u)
+                dedup.append(u)
+
+        self._servers = dedup
+        self.url = self._servers[0]
+
+        self._regex_extract_error_msg = re.compile(b"\<p\>(?P<msg>\<strong\s.*?)\</p\>")
         self._regex_remove_tag = re.compile(b"<[^>]*?>")
+
         if read_chunk_size is None:
             read_chunk_size = self.default_read_chunk_size
         self.read_chunk_size = read_chunk_size
 
-    def query(self, query):
-        """
-        Query the Overpass API
-
-        :param String|Bytes query: The query string in Overpass QL
-        :return: The parsed result
-        :rtype: overpy.Result
-        """
-        if not isinstance(query, bytes):
-            query = query.encode("utf-8")
-
-        req = Request(self.url)
-        if self.referer:
-            req.add_header('Referer', self.referer)
-        if self.user_agent:
-            req.add_header('User-Agent', self.user_agent)
-
-        try:
-            f = urlopen(req, query, timeout=TIMEOUT)
-        except HTTPError as e:
-            f = e
-
+    def _read_all(self, f):
         response = f.read(self.read_chunk_size)
         while True:
             data = f.read(self.read_chunk_size)
-            if len(data) == 0:
+            if not data:
                 break
-            response = response + data
-        f.close()
+            response += data
+        return response
 
-        if f.code == 200:
-            content_type = f.getheader("Content-Type")
-
-            if content_type == "application/json":
-                return self.parse_json(response)
-
-            if content_type == "application/osm3s+xml":
-                return self.parse_xml(response)
-
-            raise exception.OverpassUnknownContentType(content_type)
-
-        if f.code == 400:
-            msgs = []
-            for msg in self._regex_extract_error_msg.finditer(response):
-                tmp = self._regex_remove_tag.sub(b"", msg.group("msg"))
-                try:
-                    tmp = tmp.decode("utf-8")
-                except UnicodeDecodeError:
-                    tmp = repr(tmp)
-                msgs.append(tmp)
-
-            raise exception.OverpassBadRequest(
-                query,
-                msgs=msgs
-            )
-
-        if f.code == 429:
-            raise exception.OverpassTooManyRequests
-
-        if f.code == 504:
-            raise exception.OverpassGatewayTimeout
-
-        raise exception.OverpassUnknownHTTPStatusCode(f.code)
-
-    def parse_json(self, data, encoding="utf-8"):
-        """
-        Parse raw response from Overpass service.
-
-        :param data: Raw JSON Data
-        :type data: String or Bytes
-        :param encoding: Encoding to decode byte string
-        :type encoding: String
-        :return: Result object
-        :rtype: overpy.Result
-        """
-        if isinstance(data, bytes):
-            data = data.decode(encoding)
-        data = json.loads(data, parse_float=Decimal)
-        return Result.from_json(data, api=self)
-
-    def parse_xml(self, data, encoding="utf-8"):
-        """
-
-        :param data: Raw XML Data
-        :type data: String or Bytes
-        :param encoding: Encoding to decode byte string
-        :type encoding: String
-        :return: Result object
-        :rtype: overpy.Result
-        """
-
+    def _get_header(self, f, name):
+        if PY2:
+            try:
+                return f.info().getheader(name.lower())
+            except Exception:
+                return None
         try:
-            isFile = os.path.exists(data)
-        except:
-            isFile = False
-        if not isFile:
+            v = f.getheader(name)
+            if v:
+                return v
+        except Exception:
+            pass
+        try:
+            return f.headers.get(name)
+        except Exception:
+            return None
 
-            if isinstance(data, bytes):
-                data = data.decode(encoding)
+    def query(self, query):
+        if not isinstance(query, bytes):
+            query = query.encode("utf-8")
 
-        return Result.from_xml(data, api=self)
+        last_code = None
+        last_exc = None
 
+        headers = {
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip",
+            "Content-Type": "application/octet-stream",
+        }
+
+        backoff_base = 1.25
+
+        for server in self._servers:
+            self.url = server
+
+            for attempt in range(self.max_tries):
+                req = Request(server, data=query)
+
+                if self.referer:
+                    req.add_header("Referer", self.referer)
+                if self.user_agent:
+                    req.add_header("User-Agent", self.user_agent)
+                for k, v in headers.items():
+                    req.add_header(k, v)
+
+                try:
+                    f = urlopen(req, timeout=self.timeout)
+                except HTTPError as e:
+                    f = e
+                except URLError as e:
+                    last_exc = e
+                    time.sleep(backoff_base * (attempt + 1))
+                    continue
+
+                try:
+                    response = self._read_all(f)
+                finally:
+                    try:
+                        f.close()
+                    except Exception:
+                        pass
+
+                code = getattr(f, "code", None)
+                last_code = code
+
+                content_encoding = (self._get_header(f, "Content-Encoding") or "").lower()
+                if "gzip" in content_encoding:
+                    try:
+                        response = gzip.GzipFile(fileobj=io.BytesIO(response)).read()
+                    except Exception:
+                        pass
+
+                if code == 200:
+                    content_type = self._get_header(f, "Content-Type") or ""
+                    ct = content_type.split(";")[0].strip().lower()
+
+                    if ct == "application/json":
+                        return self.parse_json(response)
+
+                    if ct in ("application/osm3s+xml", "application/xml", "text/xml"):
+                        return self.parse_xml(response)
+
+                    head = response.lstrip()[:1]
+                    if head == b"{":
+                        return self.parse_json(response)
+                    if head == b"<":
+                        return self.parse_xml(response)
+
+                    raise exception.OverpassUnknownContentType(content_type)
+
+                if code == 400:
+                    msgs = []
+                    for msg in self._regex_extract_error_msg.finditer(response):
+                        tmp = self._regex_remove_tag.sub(b"", msg.group("msg"))
+                        try:
+                            tmp = tmp.decode("utf-8")
+                        except UnicodeDecodeError:
+                            tmp = repr(tmp)
+                        msgs.append(tmp)
+
+                    raise exception.OverpassBadRequest(query, msgs=msgs)
+
+                if code == 429:
+                    time.sleep(max(2.0, backoff_base * (attempt + 1)))
+                    if attempt + 1 >= self.max_tries:
+                        raise exception.OverpassTooManyRequests
+                    continue
+
+                if code == 504:
+                    time.sleep(backoff_base * (attempt + 1))
+                    if attempt + 1 >= self.max_tries:
+                        raise exception.OverpassGatewayTimeout
+                    continue
+
+                if code in (403, 502, 503):
+                    time.sleep(backoff_base * (attempt + 1))
+                    break
+
+                raise exception.OverpassUnknownHTTPStatusCode(code)
+
+        if last_exc is not None:
+            raise last_exc
+        raise exception.OverpassUnknownHTTPStatusCode(last_code if last_code is not None else 0)
 
 class Result(object):
 
