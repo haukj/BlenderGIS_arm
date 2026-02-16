@@ -106,45 +106,33 @@ https://stackoverflow.com/questions/1643327/sys-excepthook-and-threading
 '''
 import threading
 
-def _install_thread_exception_forwarding():
+def _patch_threading_excepthook():
 	'''
-	Forward uncaught exceptions from worker threads to sys.excepthook.
-	Prefer native threading.excepthook when available (Py>=3.8) and keep
-	a guarded fallback monkeypatch for older runtimes.
+	Patch `threading.Thread.__init__` only once.
+	When the addon is reloaded, applying the patch repeatedly can create
+	a recursive wrapper chain and crash with `RecursionError`.
 	'''
-	if getattr(threading, '_bgis_thread_excepthook_installed', False):
+	if getattr(threading.Thread, '_bgis_excepthook_patched', False):
 		return
 
-	if hasattr(threading, 'excepthook'):
-		original = threading.excepthook
+	init_original = threading.Thread.__init__
 
-		def _threading_excepthook(args):
+	def init(self, *args, **kwargs):
+		init_original(self, *args, **kwargs)
+		run_original = self.run
+
+		def run_with_except_hook(*args2, **kwargs2):
 			try:
-				sys.excepthook(args.exc_type, args.exc_value, args.exc_traceback)
+				run_original(*args2, **kwargs2)
 			except Exception:
-				original(args)
+				sys.excepthook(*sys.exc_info())
 
-		threading.excepthook = _threading_excepthook
-	else:
-		init_original = threading.Thread.__init__
+		self.run = run_with_except_hook
 
-		def init(self, *args, **kwargs):
-			init_original(self, *args, **kwargs)
-			run_original = self.run
+	threading.Thread.__init__ = init
+	threading.Thread._bgis_excepthook_patched = True
 
-			def run_with_except_hook(*args2, **kwargs2):
-				try:
-					run_original(*args2, **kwargs2)
-				except Exception:
-					sys.excepthook(*sys.exc_info())
-
-			self.run = run_with_except_hook
-
-		threading.Thread.__init__ = init
-
-	threading._bgis_thread_excepthook_installed = True
-
-_install_thread_exception_forwarding()
+_patch_threading_excepthook()
 
 ####
 
