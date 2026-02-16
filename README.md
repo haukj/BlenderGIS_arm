@@ -10,6 +10,16 @@ Note : Since 2022, the OpenTopography web service requires an API key. Please re
 
 ## Functionalities overview
 
+
+## Recommended setup for Norway / Statens vegvesen
+
+For projects that require authoritative Norwegian geodata, prefer:
+
+- **Kartverket / Geonorge** basemaps (WMTS/WMS) in the map viewer.
+- **NVDB road network importer** for Statens vegvesen road centerlines.
+
+OpenStreetMap and Google layers can still be useful for quick context, but should be treated as non-authoritative background sources.
+
 **GIS datafile import :** Import in Blender most commons GIS data format : Shapefile vector, raster image, geotiff DEM, OpenStreetMap xml.
 
 There are a lot of possibilities to create a 3D terrain from geographic data with BlenderGIS, check the [Flowchart](https://raw.githubusercontent.com/wiki/domlysz/blenderGIS/flowchart.jpg) to have an overview.
