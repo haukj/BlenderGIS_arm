@@ -152,7 +152,7 @@ SOURCES = {
 
 	"KARTVERKET" : {
 		"name" : 'Kartverket (Norge)',
-		"description" : 'Offisielle bakgrunnskart fra Kartverket cache-tjeneste',
+		"description" : 'Offisielle bakgrunnskart fra Kartverket (anbefalt for Norge)',
 		"service": 'TMS',
 		"grid": 'WM',
 		"quadTree": False,
@@ -167,7 +167,7 @@ SOURCES = {
 
 	"GEONORGE_GRUNNKART" : {
 		"name" : 'Geonorge grunnkart',
-		"description" : 'Norges grunnkart via Kartverket WMTS (gatekeeper)',
+		"description" : 'Norges grunnkart via Kartverket WMTS (offisiell kilde)',
 		"service": 'WMTS',
 		"grid": 'WM',
 		"matrix" : 'webmercator',
@@ -206,7 +206,7 @@ SOURCES = {
 
 	"GOOGLE" : {
 		"name" : 'Google',
-		"description" : 'Google map',
+		"description" : 'Google map (ikke offisiell kilde)',
 		"service": 'TMS',
 		"grid": 'WM',
 		"quadTree": False,
@@ -221,7 +221,7 @@ SOURCES = {
 
 	"OSM" : {
 		"name" : 'OSM',
-		"description" : 'Open Street Map',
+		"description" : 'OpenStreetMap (crowdsourcet, ikke offisiell kilde)',
 		"service": 'TMS',
 		"grid": 'WM',
 		"quadTree": False,
