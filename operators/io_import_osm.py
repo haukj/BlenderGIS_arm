@@ -20,7 +20,7 @@ from ..core.proj import Reproj, reprojBbox, reprojPt, utm
 from ..core.utils import perf_clock
 
 from ..core import settings
-USER_AGENT = settings.user_agent
+api = overpy.Overpass(overpass_server=prefs.osmServer, user_agent=settings.user_agent)
 
 PKG, SUBPKG = __package__.split('.', maxsplit=1)
 
