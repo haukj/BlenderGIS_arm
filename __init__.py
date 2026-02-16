@@ -105,22 +105,33 @@ https://stackoverflow.com/questions/1643327/sys-excepthook-and-threading
 '''
 import threading
 
-init_original = threading.Thread.__init__
+def _patch_threading_excepthook():
+	'''
+	Patch `threading.Thread.__init__` only once.
+	When the addon is reloaded, applying the patch repeatedly can create
+	a recursive wrapper chain and crash with `RecursionError`.
+	'''
+	if getattr(threading.Thread, '_bgis_excepthook_patched', False):
+		return
 
-def init(self, *args, **kwargs):
+	init_original = threading.Thread.__init__
 
-	init_original(self, *args, **kwargs)
-	run_original = self.run
+	def init(self, *args, **kwargs):
+		init_original(self, *args, **kwargs)
+		run_original = self.run
 
-	def run_with_except_hook(*args2, **kwargs2):
-		try:
-			run_original(*args2, **kwargs2)
-		except Exception:
-			sys.excepthook(*sys.exc_info())
+		def run_with_except_hook(*args2, **kwargs2):
+			try:
+				run_original(*args2, **kwargs2)
+			except Exception:
+				sys.excepthook(*sys.exc_info())
 
-	self.run = run_with_except_hook
+		self.run = run_with_except_hook
 
-threading.Thread.__init__ = init
+	threading.Thread.__init__ = init
+	threading.Thread._bgis_excepthook_patched = True
+
+_patch_threading_excepthook()
 
 ####
 
