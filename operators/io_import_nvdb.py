@@ -143,46 +143,44 @@ def _extract_linestrings(payload):
 
 
 def _collect_items(payload):
-	"""Return item list from known NVDB list keys."""
+	"""Return item list from common NVDB payload formats."""
 	if not isinstance(payload, dict):
 		return []
-
-	items = []
-	for key in NVDB_ITEM_KEYS:
-		value = payload.get(key)
-		if isinstance(value, list):
-			items.extend(value)
-	return items
+	for key in ('objekter', 'vegnett', 'segmenter'):
+		items = payload.get(key)
+		if isinstance(items, list):
+			return items
+	return []
 
 
-def _fetch_all_pages(base_url, params, headers, timeout=45, max_pages=25):
-	"""Fetch paginated NVDB responses and return flattened item list."""
+def _fetch_all_pages(base_url, params, headers, timeout=45, max_pages=20):
+	"""Fetch paginated NVDB responses.
+
+	NVDB LES v3 often returns paging info in metadata.neste.href.
+	"""
 	all_items = []
-	next_url = base_url.rstrip('/') + NVDB_SEGMENT_PATH + '?' + urllib.parse.urlencode(params)
-	page_count = 0
-	truncated = False
+	next_url = base_url.rstrip('/') + '/vegnett/veglenkesekvenser/segmentert?' + urllib.parse.urlencode(params)
+	pages = 0
 
-	while next_url:
-		if page_count >= max_pages:
-			truncated = True
-			break
-
-		page_count += 1
-		log.info('Requesting NVDB page %s: %s', page_count, next_url)
+	while next_url and pages < max_pages:
+		pages += 1
+		log.info('Requesting NVDB page %s: %s', pages, next_url)
 		request = urllib.request.Request(url=next_url, headers=headers)
 		with urllib.request.urlopen(request, timeout=timeout) as resp:
 			payload = json.loads(resp.read().decode('utf-8'))
 
-		all_items.extend(_collect_items(payload))
+		page_items = _collect_items(payload)
+		if page_items:
+			all_items.extend(page_items)
 
-		next_url = None
 		metadata = payload.get('metadata') if isinstance(payload, dict) else None
+		next_url = None
 		if isinstance(metadata, dict):
 			neste = metadata.get('neste')
 			if isinstance(neste, dict):
 				next_url = neste.get('href')
 
-	return all_items, page_count, truncated
+	return all_items, pages
 
 
 class IMPORTGIS_OT_nvdb_query(Operator):
@@ -212,14 +210,6 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 		min=0,
 		soft_max=20000,
 		default=5000,
-	)
-
-	max_pages: IntProperty(
-		name='Maks sider',
-		description='Øvre grense for antall sider som hentes fra NVDB API',
-		min=1,
-		soft_max=100,
-		default=25,
 	)
 
 	merge_segments: BoolProperty(
@@ -275,20 +265,14 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 		}
 
 		try:
-			items, page_count, truncated = _fetch_all_pages(
-				self.endpoint,
-				params,
-				headers=headers,
-				timeout=45,
-				max_pages=self.max_pages,
-			)
-		except HTTPError as exc:
-			log.error('NVDB query failed with HTTP error %s', exc.code, exc_info=True)
-			self.report({'ERROR'}, f'NVDB query failed (HTTP {exc.code}). Check endpoint/parameters.')
+			items, page_count = _fetch_all_pages(self.endpoint, params, headers=headers, timeout=45)
+		except HTTPError as e:
+			log.error('NVDB query failed with HTTP error %s', e.code, exc_info=True)
+			self.report({'ERROR'}, f'NVDB query failed (HTTP {e.code}). Check endpoint/parameters.')
 			return {'CANCELLED'}
-		except URLError as exc:
+		except URLError as e:
 			log.error('NVDB query failed due to network issue', exc_info=True)
-			self.report({'ERROR'}, f'NVDB query failed due to network error: {exc.reason}')
+			self.report({'ERROR'}, f'NVDB query failed due to network error: {e.reason}')
 			return {'CANCELLED'}
 		except Exception:
 			log.error('NVDB query failed', exc_info=True)
@@ -300,16 +284,12 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 			self.report({'WARNING'}, 'No NVDB road segments found in requested area')
 			return {'CANCELLED'}
 
-		if truncated:
-			self.report({'WARNING'}, f'Paginated NVDB result was truncated after {self.max_pages} pages')
-
 		if self.max_segments > 0 and len(lines_lonlat) > self.max_segments:
 			lines_lonlat = lines_lonlat[:self.max_segments]
 			self.report({'WARNING'}, f'NVDB returned many results; limited to {self.max_segments} segments')
 
 		dx, dy = geoscn.getOriginPrj()
 		obj_count = 0
-		reproj_fail_count = 0
 
 		if self.merge_segments:
 			bm = bmesh.new()
@@ -317,7 +297,6 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 				try:
 					pts = reprojPts(4326, geoscn.crs, line)
 				except Exception:
-					reproj_fail_count += 1
 					continue
 				if len(pts) < 2:
 					continue
@@ -329,18 +308,17 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 						pass
 
 			if len(bm.verts) > 0:
-				mesh = bpy.data.meshes.new('NVDB_road_network')
-				bm.to_mesh(mesh)
-				obj = bpy.data.objects.new(mesh.name, mesh)
+				me = bpy.data.meshes.new('NVDB_road_network')
+				bm.to_mesh(me)
+				obj = bpy.data.objects.new(me.name, me)
 				scn.collection.objects.link(obj)
 				obj_count = 1
 			bm.free()
 		else:
-			for idx, line in enumerate(lines_lonlat, 1):
+			for i, line in enumerate(lines_lonlat, 1):
 				try:
 					pts = reprojPts(4326, geoscn.crs, line)
 				except Exception:
-					reproj_fail_count += 1
 					continue
 				if len(pts) < 2:
 					continue
@@ -353,10 +331,10 @@ class IMPORTGIS_OT_nvdb_query(Operator):
 					except ValueError:
 						pass
 
-				mesh = bpy.data.meshes.new(f'NVDB_road_{idx:04d}')
-				bm.to_mesh(mesh)
+				me = bpy.data.meshes.new(f'NVDB_road_{i:04d}')
+				bm.to_mesh(me)
 				bm.free()
-				obj = bpy.data.objects.new(mesh.name, mesh)
+				obj = bpy.data.objects.new(me.name, me)
 				scn.collection.objects.link(obj)
 				obj_count += 1
 
