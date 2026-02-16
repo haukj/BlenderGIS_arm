@@ -49,6 +49,7 @@ EXPORT_SHP = True
 GET_DEM = True
 IMPORT_GEORASTER = True
 IMPORT_OSM = True
+IMPORT_NVDB = True
 IMPORT_SHP = True
 IMPORT_ASC = True
 DELAUNAY = True
@@ -160,6 +161,8 @@ if IMPORT_GEORASTER:
 	from .operators import io_import_georaster
 if IMPORT_OSM:
 	from .operators import io_import_osm
+if IMPORT_NVDB:
+	from .operators import io_import_nvdb
 if IMPORT_SHP:
 	from .operators import io_import_shp
 if IMPORT_ASC:
@@ -225,6 +228,8 @@ class VIEW3D_MT_menu_gis_webgeodata(bpy.types.Menu):
 			self.layout.operator("view3d.map_start", icon_value=icons_dict["layers"].icon_id)
 		if IMPORT_OSM:
 			self.layout.operator("importgis.osm_query", icon_value=icons_dict["osm"].icon_id)
+		if IMPORT_NVDB:
+			self.layout.operator("importgis.nvdb_query")
 		if GET_DEM:
 			self.layout.operator("importgis.dem_query", icon_value=icons_dict["raster"].icon_id)
 
@@ -327,6 +332,8 @@ def register():
 		io_export_shp.register()
 	if IMPORT_OSM:
 		io_import_osm.register()
+	if IMPORT_NVDB:
+		io_import_nvdb.register()
 	if IMPORT_ASC:
 		io_import_asc.register()
 	if DELAUNAY:
@@ -399,6 +406,8 @@ def unregister():
 		io_export_shp.unregister()
 	if IMPORT_OSM:
 		io_import_osm.unregister()
+	if IMPORT_NVDB:
+		io_import_nvdb.unregister()
 	if IMPORT_ASC:
 		io_import_asc.unregister()
 	if DELAUNAY:

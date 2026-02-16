@@ -150,6 +150,55 @@ GRIDS = {
 SOURCES = {
 
 
+	"KARTVERKET" : {
+		"name" : 'Kartverket (Norge)',
+		"description" : 'Offisielle bakgrunnskart fra Kartverket cache-tjeneste',
+		"service": 'TMS',
+		"grid": 'WM',
+		"quadTree": False,
+		"layers" : {
+			"TOPO" : {"urlKey" : 'topo', "name" : 'Topografisk norgeskart', "description" : '', "format" : 'png', "zmin" : 0, "zmax" : 18},
+			"GRAY" : {"urlKey" : 'topograatone', "name" : 'Topografisk gråtone', "description" : '', "format" : 'png', "zmin" : 0, "zmax" : 18},
+			"SJOKART" : {"urlKey" : 'sjokartraster', "name" : 'Sjøkart raster', "description" : '', "format" : 'png', "zmin" : 0, "zmax" : 18}
+		},
+		"urlTemplate": "https://cache.kartverket.no/v1/wmts/1.0.0/{LAY}/default/webmercator/{Z}/{Y}/{X}.{FORMAT}",
+		"referer": "https://www.kartverket.no/"
+	},
+
+	"GEONORGE_GRUNNKART" : {
+		"name" : 'Geonorge grunnkart',
+		"description" : 'Norges grunnkart via Kartverket WMTS (gatekeeper)',
+		"service": 'WMTS',
+		"grid": 'WM',
+		"matrix" : 'webmercator',
+		"layers" : {
+			"BASE" : {
+				"urlKey" : 'norges_grunnkart',
+				"name" : 'Norges grunnkart',
+				"description" : '',
+				"format" : 'png',
+				"style" : 'default',
+				"zmin" : 0,
+				"zmax" : 18
+			}
+		},
+		"urlTemplate": {
+			"BASE_URL"     : 'https://opencache.statkart.no/gatekeeper/gk/gk.open_wmts?',
+			"SERVICE"      : 'WMTS',
+			"VERSION"      : '1.0.0',
+			"REQUEST"      : 'GetTile',
+			"LAYER"        : '{LAY}',
+			"STYLE"        : '{STYLE}',
+			"FORMAT"       : 'image/{FORMAT}',
+			"TILEMATRIXSET": '{MATRIX}',
+			"TILEMATRIX"   : '{Z}',
+			"TILEROW"      : '{Y}',
+			"TILECOL"      : '{X}',
+		},
+		"referer": "https://www.geonorge.no/",
+	},
+
+
 	###############
 	# TMS examples
 	###############

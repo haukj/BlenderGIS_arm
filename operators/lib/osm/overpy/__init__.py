@@ -100,7 +100,7 @@ class Overpass(object):
         self._servers = dedup
         self.url = self._servers[0]
 
-        self._regex_extract_error_msg = re.compile(b"\<p\>(?P<msg>\<strong\s.*?)\</p\>")
+        self._regex_extract_error_msg = re.compile(rb"<p>(?P<msg><strong\s.*?)</p>")
         self._regex_remove_tag = re.compile(b"<[^>]*?>")
 
         if read_chunk_size is None:
@@ -108,13 +108,13 @@ class Overpass(object):
         self.read_chunk_size = read_chunk_size
 
     def _read_all(self, f):
-        response = f.read(self.read_chunk_size)
+        chunks = []
         while True:
             data = f.read(self.read_chunk_size)
             if not data:
                 break
-            response += data
-        return response
+            chunks.append(data)
+        return b"".join(chunks)
 
     def _get_header(self, f, name):
         if PY2:

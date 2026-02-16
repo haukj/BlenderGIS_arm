@@ -1,6 +1,5 @@
 # -*- coding:utf-8 -*-
 import sys, os, time
-import sys, os
 sys.path.append(os.path.abspath('..'))
 
 from PyQt4 import QtGui, QtCore, uic
@@ -49,7 +48,7 @@ def getKmlExtent(kmlFile, crs2):
 		return coordinates
 
 	def namespace(element):
-		m = re.match('\{.*\}', element.tag)
+		m = re.match(r'\{.*\}', element.tag)
 		return m.group(0) if m else ''
 
 	root = etree.parse(kmlFile).getroot()
